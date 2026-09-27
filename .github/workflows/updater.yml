@@ -1,0 +1,68 @@
+name: Mirror Updater
+
+# Publishes the newest upstream version as a release. Everything specific to
+# the upstream lives in scripts/fetch.sh; a pull request touching it runs the
+# download without publishing.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - scripts/**
+      - .github/workflows/updater.yml
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+permissions: write-all
+
+jobs:
+  mirror:
+    name: Mirror Latest Version
+    # The template's own fetch.sh mirrors nothing yet.
+    if: ${{ github.repository != 'Mai0313/mirror_template' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get Upstream Version
+        id: version
+        run: |
+          VERSION=$(./scripts/fetch.sh version)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check Existing Release
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        # Published releases only: `gh release view` also finds a draft left
+        # by a cancelled run, which would block that version for good.
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download
+        if: ${{ steps.check.outputs.exists == 'false' || github.event_name == 'pull_request' }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          ./scripts/fetch.sh download "$VERSION" dist
+          ./scripts/fetch.sh notes "$VERSION" > notes.md
+
+      - name: Publish Release
+        if: ${{ steps.check.outputs.exists == 'false' && github.event_name != 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: gh release create "$VERSION" dist/* --title "$VERSION" --notes-file notes.md
