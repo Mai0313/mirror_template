@@ -8,7 +8,17 @@
 
 ## 工作方式
 
-`.github/workflows/updater.yml` 每小时运行一次。它向 `scripts/fetch.sh` 获取上游的最新版本，如果还没有 release 使用这个 tag，就下载并验证该版本的所有文件，连同该版本的 release notes 发布为 release。只要有文件下载失败或 checksum 不符，就不会发布任何东西，下一次运行再重试。
+`.github/workflows/updater.yml` 每小时运行一次：
+
+```mermaid
+flowchart LR
+    run["每小时运行"] --> version["fetch.sh version"]
+    version --> released{"已有这个 tag<br/>的 release？"}
+    released -- 是 --> done["不做任何事"]
+    released -- 否 --> fetch["fetch.sh download<br/>fetch.sh notes"]
+    fetch -- 每个文件都通过验证 --> publish["连同 release notes<br/>发布 release"]
+    fetch -- 下载失败或<br/>checksum 不符 --> retry["不发布任何东西，<br/>下一次运行再重试"]
+```
 
 `scripts/fetch.sh` 是唯一与上游相关的文件：
 
@@ -18,7 +28,7 @@
 ./scripts/fetch.sh notes VERSION          # VERSION 的 release notes
 ```
 
-模板中的三个命令都是会直接失败的 stub。它们要用到的 helper 已经写好：检查版本字符串、下载文件并验证 checksum，以及从 Markdown changelog 取出某个版本的段落。
+模板中的三个命令都是会直接失败的 stub。它们要用到的 helper 已经写在同一个文件里。
 
 ## 创建镜像
 
@@ -31,5 +41,5 @@
 
 ## 其他内置功能
 
-- 代码质量：每个 pull request 都会运行 pre-commit（shellcheck、mdformat、codespell、gitleaks），hooks 每天自动更新。
+- 代码质量：每个 pull request 都会运行 pre-commit（hooks 见 `.pre-commit-config.yaml`），hooks 每天自动更新。
 - Secret scanning 和 CodeQL、GitHub Actions 的 Dependabot 和自动 merge、semantic pull request 标题，以及按分支名称添加的 pull request label。
